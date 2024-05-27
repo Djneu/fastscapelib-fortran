@@ -7,7 +7,7 @@ subroutine Marine()
   use FastScapeContext
 
   implicit none
-
+  double precision dhs(nn),dhs1(nn)   !!update to avoid the invalid2024
   double precision, dimension(:), allocatable :: flux,shelfdepth,ht,Fs,dh,dh1,dh2,Fmixt,mwater
   double precision, dimension(:), allocatable :: dhs, dhs1, F1, F2, zi, zo
   integer, dimension(:), allocatable :: flag,mmnrec,mmstack
@@ -17,7 +17,7 @@ subroutine Marine()
   integer ij,ijr,ijk,k
 
   allocate (flux(nn),shelfdepth(nn),ht(nn),Fs(nn),dh(nn),dh1(nn),dh2(nn),Fmixt(nn),flag(nn))
-  allocate (dhs(nn),dhs1(nn),F1(nn),F2(nn),zi(nn),zo(nn))
+  allocate (F1(nn),F2(nn),zi(nn),zo(nn))
 
   ! set nodes at transition between ocean and continent
   flag=0
