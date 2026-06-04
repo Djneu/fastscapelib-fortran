@@ -48,6 +48,8 @@ subroutine StreamPowerLaw ()
   ! Gauss-Seidel iteration
   nGSStreamPowerLaw=0
 
+  water=0.d0
+  lake_water_volume=0.d0
   lake_sediment=0.d0
   lake_sill=0.d0
   dh=0.d0
@@ -259,7 +261,10 @@ subroutine StreamPowerLaw ()
     ! Gauss-Seidel iteration
     nGSStreamPowerLaw=0
 
+    water=0.d0
+    lake_water_volume=0.d0
     lake_sediment=0.d0
+    lake_sill=0.d0
     dh=0.d0
     hp=h
 
