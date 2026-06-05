@@ -199,6 +199,8 @@ subroutine find_mult_rec (h,rec0,stack0,water,rec,nrec,wrec,lrec,stack,nx,ny,dx,
 
   nrec=0
   wrec=0.d0
+  lrec=0.d0
+  rec=0.d0
 
   ! loop on all nodes
   do j=bounds_j1,bounds_j2

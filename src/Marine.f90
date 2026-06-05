@@ -8,10 +8,10 @@ subroutine Marine()
 
   implicit none
  
-  double precision dhs(nn),dhs1(nn)
+  !double precision dhs(nn),dhs1(nn)
 
   double precision, dimension(:), allocatable :: flux,shelfdepth,ht,Fs,dh,dh1,dh2,Fmixt,mwater
-  double precision, dimension(:), allocatable :: F1, F2, zi, zo
+  double precision, dimension(:), allocatable :: dhs, dhs1, F1, F2, zi, zo
   integer, dimension(:), allocatable :: COTflag,mmnrec,mmstack
   integer, dimension(:,:), allocatable :: mmrec
   double precision, dimension(:,:), allocatable :: mmwrec,mmlrec
@@ -19,7 +19,7 @@ subroutine Marine()
   integer ij,ijr,ijk,k,istep,i,j
 
   allocate (flux(nn),shelfdepth(nn),ht(nn),Fs(nn),dh(nn),dh1(nn),dh2(nn),Fmixt(nn),COTflag(nn))
-  allocate (F1(nn),F2(nn),zi(nn),zo(nn))
+  allocate (dhs(nn),dhs1(nn),F1(nn),F2(nn),zi(nn),zo(nn))
 
   ! set nodes at transition between ocean and continent
   COTflag=0
@@ -113,6 +113,11 @@ subroutine Marine()
   ! stores initial height and fraction
   ht=h
   Fmixt=Fmix
+
+  ! ACG 05062026 - BEGIN
+  dhs = 0.d0
+  dhs1 = 0.d0
+  ! ACG 05062026 - END
 
   !print*,'flux',minval(flux),sum(flux)/nx/ny,maxval(flux)
   !print*,'Fmix',minval(Fmix),sum(Fmix)/nx/ny,maxval(Fmix)

@@ -80,6 +80,7 @@ module FastScapeContext
     etot2(1:nx,1:ny) => etot
 
     call SetBC (1111)
+    h = 0.d0
     call random_number (h)
     h(1:nx) = 0.d0
     h(nx*(ny-1)+1:nx*ny) = 0.d0
@@ -92,10 +93,31 @@ module FastScapeContext
     b = h
     precip = 1.d0
     p_mfd_exp(1:nn) = 1.d0
+    catch0 = 0.d0
     call random_number (catch0)
     sealevel = 0.d0
     Fmix = 0.5d0
     lake_depth = 0.d0
+
+    ! ACG 04062026 - begin
+    stack = 0.d0
+    ndon = 0.d0
+    rec = 0.d0
+    don = 0.d0
+    catch = 0.d0
+    length = 0.d0
+    a = 0.d0
+    erate = 0.d0
+    Sedflux = 0.d0
+    kf = 0.d0
+    kd = 0.d0
+    hwater = 0.d0
+    mrec = 0.d0
+    mnrec = 0.d0
+    mwrec = 0.d0
+    mlrec = 0.d0
+    mstack = 0.d0
+    ! ACG 04062026 - end
 
     runSPL = .false.
     runAdvect = .false.
