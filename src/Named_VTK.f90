@@ -1,42 +1,39 @@
-subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, model_dim, adjustment)
+subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, model_dim, adjustment, time)
 
   ! Writes an XML StructuredGrid (.vts) file per timestep into
-  ! <foldername>/, preserving the regular nx*ny lattice (connectivity
-  ! is implicit, so no Cells block is needed).
+  ! <foldername>/.
   !
   ! Companion routine Fastscape_PVD_Collection maintains a .pvd that
   ! indexes each .vts with its physical time, giving ParaView a proper
   ! time series that plots directly alongside ASPECT's solution.pvd.
   !
-  ! This version writes ASCII (inline) data: simplest to get correct and
-  ! trivially inspectable. Move to appended-binary later if you want to
-  ! match the file size / speed of the original binary .vtk output.
+  ! Adjustment and model_height are small factors used to correctly plot
+  ! FastScape surface in relation to the ASPECT surface. An additional 100 m is added
+  ! to model_height in this script so it is clearly visible above ASPECT.
+  !
+  ! Model dim is used to switch the surface plot. In 2D ASPECT Y is depth in ASPECT and FastScape is X-Z,
+  ! in 3D ASPECT Z is depth in ASPET and FastScape is X-Y.
 
   use FastScapeContext
   implicit none
 
   integer, intent(in) :: k, istep, model_dim
-  double precision, intent(in) :: vex, model_height, adjustment
+  double precision, intent(in) :: vex, model_height, adjustment, time
   double precision, intent(in), dimension(*) :: f
   character(len=k), intent(in) :: foldername
-  character cstep*7
 
+  character(len=7) :: cstep
   integer :: i, j
-  double precision :: dx, dy
+  double precision :: dx, dy 
   character(len=1024) :: fname
   character(len=64)   :: extent
+  allocate(channel(nn))
 
   dx = xl/(nx - 1)
   dy = yl/(ny - 1)
 
-  ! zero-padded step string (matches your original convention)
-  write (cstep,'(i7)') istep
-  if (istep.lt.10)      cstep(1:6)='000000'
-  if (istep.lt.100)     cstep(1:5)='00000'
-  if (istep.lt.1000)    cstep(1:4)='0000'
-  if (istep.lt.10000)   cstep(1:3)='000'
-  if (istep.lt.100000)  cstep(1:2)='00'
-  if (istep.lt.1000000) cstep(1:1)='0'
+  ! zero-padded step string, built once and reused everywhere
+  write (cstep,'(i7.7)') istep
 
   ! StructuredGrid extent: 0-based index range in i, j, k
   write(extent,'(I0,1x,I0,1x,I0,1x,I0,1x,I0,1x,I0)') 0, nx-1, 0, ny-1, 0, 0
@@ -56,12 +53,11 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   do j = 1, ny
      do i = 1, nx
       if (model_dim == 2) then
-         ! 2D ASPECT: elevation in Y, Z = 0, adjust for ghost nodes and extent in 2D.
+         ! 2D ASPECT: elevation in Y, adjust for ghost nodes and extent in 2D.
          write(77,'(3(1x,ES14.6))') &
               sngl(dx*(i-1)-adjustment), &
               sngl((h(i+(j-1)*nx)+model_height)*abs(vex)), &
               sngl(dy*(j-1)-yl-adjustment)
-              
       else
          ! 3D ASPECT: X, Y as-is, elevation in Z
          write(77,'(3(1x,ES14.6))') &
@@ -83,15 +79,14 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   call write_scalar(77, 'total_erosion', etot,   nn)
   call write_scalar(77, 'drainage_area', a,      nn)
   call write_scalar(77, 'catchment',     catch,  nn)
-  call write_scalar(77, 'precipitation',     precip,  nn)
+  call write_scalar(77, 'precipitation', precip, nn)
 
   ! Should these be renamed based on orientation, should z always read uplift?
-  call write_scalar(77, 'velocity_z',  u  ,  nn)
-  call write_scalar(77, 'velocity_x',  vx  ,  nn)
-  call write_scalar(77, 'velocity_y',  vy  ,  nn)
-  call write_scalar(77, 'diffusivity',  kd  ,  nn)
-  call write_scalar(77, 'river_incision_rate',  kf  ,  nn)
-  call write_scalar(77, 'velocity_y',  vy  ,  nn)
+  call write_scalar(77, 'velocity_z',          u,   nn)
+  call write_scalar(77, 'velocity_x',          vx,  nn)
+  call write_scalar(77, 'velocity_y',          vy,  nn)
+  call write_scalar(77, 'diffusivity',         kd,  nn)
+  call write_scalar(77, 'river_incision_rate', kf,  nn)
   write(77,'(A)') '      </PointData>'
 
   write(77,'(A)') '    </Piece>'
@@ -113,7 +108,7 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
      do j = 1, ny
         do i = 1, nx
           if (model_dim == 2) then
-            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), & 
+            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), &
                   sngl(b(i+(j-1)*nx)*abs(vex)+model_height), &
                   sngl(dy*(j-1)-yl-adjustment)
           else
@@ -168,6 +163,10 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
 
   end if
 
+  call Fastscape_PVD_Collection (cstep, time, foldername, k, vex)
+
+  deallocate(channel)
+
   return
 
 contains
@@ -185,57 +184,110 @@ contains
     write(unit,'(A)') '        </DataArray>'
   end subroutine write_scalar
 
+!--------------------------------------------------------------------
+
+  subroutine Fastscape_PVD_Collection (cstep, time, foldername, k, vex)
+
+    ! Rewrites the sidecar index with this step appended, dropping any
+    ! existing entries at or after the current time so that a replayed
+    ! step (e.g. after a checkpoint restart) replaces its old record
+    ! instead of duplicating it. Then regenerates each .pvd from the
+    ! index. Holds no state between calls: the index file on disk is
+    ! the only record, so restarts pick up where they left off.
+
+    implicit none
+    integer, intent(in) :: k
+    character(len=7), intent(in) :: cstep
+    double precision, intent(in) :: time, vex
+    character(len=k), intent(in) :: foldername
+
+    character(len=7), allocatable :: cs(:)
+    double precision, allocatable :: t(:)
+    character(len=7) :: cs1
+    double precision :: t1
+    integer :: n, ios, r
+    logical :: exists
+
+    ! read existing index, keeping only entries strictly before this time
+    allocate(cs(100000), t(100000))
+    n = 0
+    inquire(file=trim(foldername)//'/.pvd_index', exist=exists)
+    if (exists) then
+       open(unit=79, file=trim(foldername)//'/.pvd_index', status='old', &
+            form='formatted', action='read')
+       do
+          read(79,'(A7,1x,ES16.8)',iostat=ios) cs1, t1
+          if (ios /= 0) exit
+          if (t1 .lt. time - 1.d-10*max(1.d0,abs(time))) then
+             n = n + 1
+             cs(n) = cs1
+             t(n)  = t1
+          end if
+       end do
+       close(79)
+    end if
+
+    ! append this step and rewrite the index
+    n = n + 1
+    cs(n) = cstep
+    t(n)  = time
+
+    open(unit=79, file=trim(foldername)//'/.pvd_index', status='replace', &
+         form='formatted')
+    do r = 1, n
+       write(79,'(A7,1x,ES16.8)') cs(r), t(r)
+    end do
+    close(79)
+
+    deallocate(cs, t)
+
+    call write_pvd (foldername, k, 'Topography')
+
+    if (vex.lt.0.d0) then
+       call write_pvd (foldername, k, 'SeaLevel')
+       call write_pvd (foldername, k, 'Basement')
+    end if
+
+    return
+  end subroutine Fastscape_PVD_Collection
+
+!--------------------------------------------------------------------
+
+  subroutine write_pvd (foldername, k, base)
+
+    ! Rewrites <base>.pvd in full from the sidecar index, so the
+    ! collection is always valid even if the run stops early.
+
+    implicit none
+    integer, intent(in) :: k
+    character(len=k), intent(in) :: foldername
+    character(len=*), intent(in) :: base
+
+    character(len=1024) :: fname
+    character(len=7) :: cs
+    double precision :: t
+    integer :: ios
+
+    open(unit=79, file=trim(foldername)//'/.pvd_index', status='old', &
+         form='formatted', action='read')
+
+    fname = trim(foldername)//'/'//trim(base)//'.pvd'
+    open(unit=78, file=trim(fname), status='unknown', form='formatted')
+    write(78,'(A)') '<?xml version="1.0"?>'
+    write(78,'(A)') '<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">'
+    write(78,'(A)') '  <Collection>'
+    do
+       read(79,'(A7,1x,ES16.8)',iostat=ios) cs, t
+       if (ios /= 0) exit
+       write(78,'(A,ES16.8,A)') '    <DataSet timestep="', t, &
+            '" group="" part="0" file="'//trim(base)//cs//'.vts"/>'
+    end do
+    write(78,'(A)') '  </Collection>'
+    write(78,'(A)') '</VTKFile>'
+    close(78)
+    close(79)
+
+    return
+  end subroutine write_pvd
+
 end subroutine Fastscape_Named_VTK
-
-
-subroutine Fastscape_PVD_Collection (istep, time, foldername, k)
-
-  ! Maintains <foldername>/Topography.pvd indexing each per-step .vts
-  ! with its physical time. Rewrites the whole (small) file each call so
-  ! the collection is always valid even if the run stops early.
-
-  implicit none
-  integer, intent(in) :: k, istep
-  double precision, intent(in) :: time
-  character(len=k), intent(in) :: foldername
-
-  integer, parameter :: MAXSTEPS = 100000
-  integer, save :: nrec = 0
-  integer, save :: steps(MAXSTEPS)
-  double precision, save :: times(MAXSTEPS)
-  character cstep*7
-  integer :: r
-  character(len=1024) :: fname
-
-  ! record this step
-  nrec = nrec + 1
-  if (nrec > MAXSTEPS) then
-     write(*,*) 'Fastscape_PVD_Collection: MAXSTEPS exceeded, increase it.'
-     nrec = MAXSTEPS
-     return
-  end if
-  steps(nrec) = istep
-  times(nrec) = time
-
-  fname = trim(foldername)//'/Topography.pvd'
-  open(unit=78, file=trim(fname), status='unknown', form='formatted')
-  write(78,'(A)') '<?xml version="1.0"?>'
-  write(78,'(A)') '<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">'
-  write(78,'(A)') '  <Collection>'
-  do r = 1, nrec
-     write (cstep,'(i7)') steps(r)
-     if (steps(r).lt.10)      cstep(1:6)='000000'
-     if (steps(r).lt.100)     cstep(1:5)='00000'
-     if (steps(r).lt.1000)    cstep(1:4)='0000'
-     if (steps(r).lt.10000)   cstep(1:3)='000'
-     if (steps(r).lt.100000)  cstep(1:2)='00'
-     if (steps(r).lt.1000000) cstep(1:1)='0'
-     write(78,'(A,ES16.8,A)') '    <DataSet timestep="', times(r), &
-          '" group="" part="0" file="Topography'//cstep//'.vts"/>'
-  end do
-  write(78,'(A)') '  </Collection>'
-  write(78,'(A)') '</VTKFile>'
-  close(78)
-
-  return
-end subroutine Fastscape_PVD_Collection
