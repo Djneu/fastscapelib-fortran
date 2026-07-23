@@ -20,13 +20,13 @@ module FastScapeContext
   logical :: setup_has_been_run
   double precision :: tol_rel, tol_abs
   integer :: nGSStreamPowerLawMax
-  double precision, target, dimension(:), allocatable :: h,u,vx,vy,length,a,erate,etot,catch,catch0,b,precip,kf,kd
+  double precision, target, dimension(:), allocatable :: h,u,vx,vy,length,a,erate,etot,catch,catch0,b,precip,kf,kd,kdsea1,kdsea2
   double precision, target, dimension(:), allocatable :: Sedflux, Fmix
   double precision, target, dimension(:), allocatable :: g
   double precision, target, dimension(:), allocatable :: p_mfd_exp
   double precision, dimension(:,:), pointer, contiguous :: h2, vx2, vy2, etot2, b2
   double precision :: xl, yl, dt, kfsed, m, n, kdsed, g1, g2, p
-  double precision :: sealevel, poro1, poro2, zporo1, zporo2, ratio, layer, kdsea1, kdsea2
+  double precision :: sealevel, poro1, poro2, zporo1, zporo2, ratio, layer
   integer, dimension(:), allocatable :: stack, ndon, rec
   integer, dimension(:,:), allocatable :: don
   logical :: runSPL, runAdvect, runDiffusion, runStrati, runUplift, runMarine
@@ -74,7 +74,7 @@ module FastScapeContext
     allocate (g(nn))
     allocate (bounds_bc(nn))
     allocate (p_mfd_exp(nn))
-    allocate (length(nn),a(nn),erate(nn),etot(nn),b(nn),Sedflux(nn),Fmix(nn),kf(nn),kd(nn))
+    allocate (length(nn),a(nn),erate(nn),etot(nn),b(nn),Sedflux(nn),Fmix(nn),kf(nn),kd(nn),kdsea1(nn),kdsea2(nn))
     allocate (lake_depth(nn),hwater(nn),mrec(8,nn),mnrec(nn),mwrec(8,nn),mlrec(8,nn),mstack(nn))
 
     h2(1:nx,1:ny) => h
@@ -167,6 +167,8 @@ module FastScapeContext
     if (allocated(precip)) deallocate(precip)
     if (allocated(kd)) deallocate(kd)
     if (allocated(kf)) deallocate(kf)
+    if (allocated(kdsea1)) deallocate(kdsea1)
+    if (allocated(kdsea2)) deallocate(kdsea2)
     if (allocated(reflector)) deallocate(reflector)
     if (allocated(fields)) deallocate(fields)
     if (allocated(lake_depth)) deallocate(lake_depth)
@@ -484,7 +486,8 @@ module FastScapeContext
 
   subroutine SetMarineParam (sl, p1, p2, z1, z2, r, l, kds1, kds2)
 
-    double precision, intent(in) :: sl, p1, p2, z1, z2, r, l, kds1, kds2
+    double precision, intent(in) :: sl, p1, p2, z1, z2, r, l
+    double precision, intent(in), dimension(*) :: kds1, kds2
 
     runMarine = .true.
 
@@ -495,8 +498,8 @@ module FastScapeContext
     zporo2 = z2
     ratio = r
     layer = l
-    kdsea1 = kds1
-    kdsea2 = kds2
+    kdsea1(1:nn) = kds1(1:nn)
+    kdsea2(1:nn) = kds2(1:nn)
 
     return
 

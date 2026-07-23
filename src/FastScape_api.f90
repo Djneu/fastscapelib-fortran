@@ -567,7 +567,8 @@ use FastScapeContext
 
 implicit none
 
-double precision, intent(in) :: sl, p1, p2, z1, z2, r, l, kds1, kds2
+double precision, intent(in) :: sl, p1, p2, z1, z2, r, l
+double precision, intent(in), dimension(*) :: kds1, kds2
 
 call SetMarineParam (sl, p1, p2, z1, z2, r, l, kds1, kds2)
 
