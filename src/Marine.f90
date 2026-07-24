@@ -194,18 +194,14 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
   double precision, dimension(:), allocatable :: diag,sup,inf,rhs,res,tint
   integer COTflag(nx*ny)
 
-  double precision dx,dy,dt,sealevel,L
+  double precision dx,dy,dt,sealevel,L,kdsea_ipj,kdsea_imj,kdsea_ijp,kdsea_ijm
   double precision, intent(in), dimension(*) :: kdsea1,kdsea2
-  ! double precision :: kdsea1(nx*ny),kdsea2(nx*ny)
   double precision tol,err1,err2
   double precision Ap,Bp,Cp,Dp,Ep,Mp,Np
 
   character cbc*4
 
   write (cbc,'(i4)') ibc
-
-  ! kdsea1(1:nn)=kdsea1(1:nn)
-  ! kdsea2(1:nn)=kdsea2(1:nn)
 
   nn=nx*ny
 
@@ -239,6 +235,18 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
         imj=(j-1)*nx+i-1
         ijp=(j)*nx+i
         ijm=(j-2)*nx+i
+        kdsea_ipj=(kdsea2(ipj)+(kdsea1(ipj)-kdsea2(ipj))*fhalfp(ipj) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
+                  )/2.d0
+        kdsea_imj=(kdsea2(imj)+(kdsea1(imj)-kdsea2(imj))*fhalfp(imj) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
+                  )/2.d0
+        kdsea_ijp=(kdsea2(ijp)+(kdsea1(ijp)-kdsea2(ijp))*ft(ijp) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*ft(ij) &
+                  )/2.d0
+        kdsea_ijm=(kdsea2(ijm)+(kdsea1(ijm)-kdsea2(ijm))*ft(ijm) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*ft(ij) &
+                  )/2.d0
         ! in ocean and not at ocean-continent transition
         if (ht(ij).le.sealevel.and.COTflag(ij).eq.0) then
           if (i.eq.1) then
@@ -247,11 +255,11 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
               sup(i)=0.d0
               rhs(i)=ht(ij)
             else
-              Ap=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalfp(ipj)+fhalfp(ij))/2.d0)/dx**2
+              Ap=dt/2.d0*kdsea_ipj/dx**2
               diag(i)=1.d0+Ap
               sup(i)=-Ap
-              Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ijp)+ft(ij))/2.d0)*(ht(ijp)-ht(ij))/dy**2 &
-              -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ij)+ft(ijm))/2.d0)*(ht(ij)-ht(ijm))/dy**2 &
+              Cp=dt/2.d0*kdsea_ijp*(ht(ijp)-ht(ij))/dy**2 &
+              -dt/2.d0*kdsea_ijm*(ht(ij)-ht(ijm))/dy**2 &
               +(Q1(ij)+Q2(ij))*dt/2.d0
               rhs(i)=Cp+ht(ij)
             endif
@@ -261,22 +269,22 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
               inf(i)=0.d0
               rhs(i)=ht(ij)
             else
-              Bp=-dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalfp(ij)+fhalfp(imj))/2.d0)/dx**2
+              Bp=-dt/2.d0*kdsea_imj/dx**2
               diag(i)=1.d0-Bp
               inf(i)=Bp
-              Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ijp)+ft(ij))/2.d0)*(ht(ijp)-ht(ij))/dy**2 &
-              -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ij)+ft(ijm))/2.d0)*(ht(ij)-ht(ijm))/dy**2 &
+              Cp=dt/2.d0*kdsea_ijp*(ht(ijp)-ht(ij))/dy**2 &
+              -dt/2.d0*kdsea_ijm*(ht(ij)-ht(ijm))/dy**2 &
               +(Q1(ij)+Q2(ij))*dt/2.d0
               rhs(i)=Cp+ht(ij)
             endif
           else
-            Ap=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalfp(ipj)+fhalfp(ij))/2.d0)/dx**2
-            Bp=-dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalfp(ij)+fhalfp(imj))/2.d0)/dx**2
+            Ap=dt/2.d0*kdsea_ipj/dx**2
+            Bp=-dt/2.d0*kdsea_imj/dx**2
             diag(i)=1.d0+Ap-Bp
             sup(i)=-Ap
             inf(i)=Bp
-            Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ijp)+ft(ij))/2.d0)*(ht(ijp)-ht(ij))/dy**2 &
-            -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(ft(ij)+ft(ijm))/2.d0)*(ht(ij)-ht(ijm))/dy**2 &
+            Cp=dt/2.d0*kdsea_ijp*(ht(ijp)-ht(ij))/dy**2 &
+            -dt/2.d0*kdsea_ijm*(ht(ij)-ht(ijm))/dy**2 &
             +(Q1(ij)+Q2(ij))*dt/2.d0
             rhs(i)=Cp+ht(ij)
           endif
@@ -318,10 +326,10 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
           ! deposition
           if (hhalf(ij).ge.(1.d0+1.d-6)*ht(ij)) then
             Dp=(hhalf(ij)-ht(ij))/dt
-            Ep=kdsea1(ij)/2.d0*(hhalf(ipj)-hhalf(ij))/dx**2
-            Mp=-kdsea1(ij)/2.d0*(hhalf(ij)-hhalf(imj))/dx**2
-            Np=kdsea1(ij)/2.d0*(ft(ijp)+ft(ij))*(ht(ijp)-ht(ij))/dy**2 &
-            -kdsea1(ij)/2.d0*(ft(ij)+ft(ijm))*(ht(ij)-ht(ijm))/dy**2 &
+            Ep=(kdsea1(ipj)+kdsea1(ij))/2.d0/2.d0*(hhalf(ipj)-hhalf(ij))/dx**2
+            Mp=-(kdsea1(imj)+kdsea1(ij))/2.d0/2.d0*(hhalf(ij)-hhalf(imj))/dx**2
+            Np=(kdsea1(ijp)+kdsea1(ij))/2.d0/2.d0*(ft(ijp)+ft(ij))*(ht(ijp)-ht(ij))/dy**2 &
+            -(kdsea1(ijm)+kdsea1(ij))/2.d0/2.d0*(ft(ij)+ft(ijm))*(ht(ij)-ht(ijm))/dy**2 &
             +Q1(ij)
             diag(i)=2.d0*L/dt+Dp-Mp-Ep
             sup(i)=-Ep
@@ -370,6 +378,18 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
         imj=(j-1)*nx+i-1
         ijp=(j)*nx+i
         ijm=(j-2)*nx+i
+        kdsea_ipj=(kdsea2(ipj)+(kdsea1(ipj)-kdsea2(ipj))*fhalfp(ipj) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
+                  )/2.d0
+        kdsea_imj=(kdsea2(imj)+(kdsea1(imj)-kdsea2(imj))*fhalfp(imj) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
+                  )/2.d0
+        kdsea_ijp=(kdsea2(ijp)+(kdsea1(ijp)-kdsea2(ijp))*fp(ijp) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
+                  )/2.d0
+        kdsea_ijm=(kdsea2(ijm)+(kdsea1(ijm)-kdsea2(ijm))*fp(ijm) &
+                  +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
+                  )/2.d0
         ! in ocean and not at ocean-continent transition
         if (ht(ij).le.sealevel.and.COTflag(ij).eq.0) then
           if (j.eq.1) then
@@ -378,11 +398,11 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
               sup(j)=0.d0
               rhs(j)=hhalf(ij)
             else
-              Ap=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fp(ijp)+fp(ij))/2.d0)/dy**2
+              Ap=dt/2.d0*kdsea_ijp/dy**2
               diag(j)=1.d0+Ap
               sup(j)=-Ap
-              Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ipj)+fhalf(ij))/2.d0)*(hhalf(ipj)-hhalf(ij))/dx**2 &
-              -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ij)+fhalf(imj))/2.d0)*(hhalf(ij)-hhalf(imj))/dx**2 &
+              Cp=dt/2.d0*kdsea_ipj*(hhalf(ipj)-hhalf(ij))/dx**2 &
+              -dt/2.d0*kdsea_imj*(hhalf(ij)-hhalf(imj))/dx**2 &
               +(Q1(ij)+Q2(ij))*dt/2.d0
               rhs(j)=Cp+hhalf(ij)
             endif
@@ -392,22 +412,22 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
               inf(j)=0.d0
               rhs(j)=hhalf(ij)
             else
-              Bp=-dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fp(ij)+fp(ijm))/2.d0)/dy**2
+              Bp=-dt/2.d0*kdsea_ijm/dy**2
               diag(j)=1.d0-Bp
               inf(j)=Bp
-              Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ipj)+fhalf(ij))/2.d0)*(hhalf(ipj)-hhalf(ij))/dx**2 &
-              -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ij)+fhalf(imj))/2.d0)*(hhalf(ij)-hhalf(imj))/dx**2 &
+              Cp=dt/2.d0*kdsea_ipj*(hhalf(ipj)-hhalf(ij))/dx**2 &
+              -dt/2.d0*kdsea_imj*(hhalf(ij)-hhalf(imj))/dx**2 &
               +(Q1(ij)+Q2(ij))*dt/2.d0
               rhs(j)=Cp+hhalf(ij)
             endif
           else
-            Ap=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fp(ijp)+fp(ij))/2.d0)/dy**2
-            Bp=-dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fp(ij)+fp(ijm))/2.d0)/dy**2
+            Ap=dt/2.d0*kdsea_ijp/dy**2
+            Bp=-dt/2.d0*kdsea_ijm/dy**2
             diag(j)=1.d0+Ap-Bp
             sup(j)=-Ap
             inf(j)=Bp
-            Cp=dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ipj)+fhalf(ij))/2.d0)*(hhalf(ipj)-hhalf(ij))/dx**2 &
-            -dt/2.d0*(kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*(fhalf(ij)+fhalf(imj))/2.d0)*(hhalf(ij)-hhalf(imj))/dx**2 &
+            Cp=dt/2.d0*kdsea_ipj*(hhalf(ipj)-hhalf(ij))/dx**2 &
+            -dt/2.d0*kdsea_imj*(hhalf(ij)-hhalf(imj))/dx**2 &
             +(Q1(ij)+Q2(ij))*dt/2.d0
             rhs(j)=Cp+hhalf(ij)
           endif
@@ -449,10 +469,10 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
           ! deposition
           if (h(ij).ge.(1.d0+1.d-6)*hhalf(ij)) then
             Dp=(h(ij)-hhalf(ij))/dt
-            Ep=kdsea1(ij)/2.d0*(h(ijp)-h(ij))/dy**2
-            Mp=-kdsea1(ij)/2.d0*(h(ij)-h(ijm))/dy**2
-            Np=kdsea1(ij)/2.d0*(fhalf(ipj)+fhalf(ij))*(hhalf(ipj)-hhalf(ij))/dx**2 &
-            -kdsea1(ij)/2.d0*(fhalf(ij)+fhalf(imj))*(hhalf(ij)-hhalf(imj))/dx**2 &
+            Ep=(kdsea1(ijp)+kdsea1(ij))/2.d0/2.d0*(h(ijp)-h(ij))/dy**2
+            Mp=-(kdsea1(ijm)+kdsea1(ij))/2.d0/2.d0*(h(ij)-h(ijm))/dy**2
+            Np=(kdsea1(ipj)+kdsea1(ij))/2.d0/2.d0*(fhalf(ipj)+fhalf(ij))*(hhalf(ipj)-hhalf(ij))/dx**2 &
+            -(kdsea1(imj)+kdsea1(ij))/2.d0/2.d0*(fhalf(ij)+fhalf(imj))*(hhalf(ij)-hhalf(imj))/dx**2 &
             +Q1(ij)
             diag(j)=2.d0*L/dt+Dp-Mp-Ep
             sup(j)=-Ep
