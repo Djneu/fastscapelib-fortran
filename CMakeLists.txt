@@ -80,6 +80,9 @@ set_source_files_properties(${FLEXURE_SRC_DIR}/four1.f PROPERTIES COMPILE_FLAGS 
 set_source_files_properties(${FLEXURE_SRC_DIR}/realft.f PROPERTIES COMPILE_FLAGS ${f77flags})
 set_source_files_properties(${FLEXURE_SRC_DIR}/sinft.f PROPERTIES COMPILE_FLAGS ${f77flags})
 
+# Flag to allow the use of convert="big_endian" for visualization.
+set_source_files_properties(${FASTSCAPELIB_SRC_DIR}/Named_VTK.f90 PROPERTIES COMPILE_FLAGS "-std=gnu")
+
 # Build options
 # =============
 

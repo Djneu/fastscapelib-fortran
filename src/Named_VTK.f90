@@ -2,18 +2,20 @@ subroutine Fastscape_Named_VTK (vex, istep, foldername, k, model_height, model_d
                                 time, output_basement, output_sealevel)
 
   ! Writes an XML StructuredGrid (.vts) file per timestep into
-  ! <foldername>/.
+  ! the fastscape folder of the ASPECT output folder. This will include
+  ! a .pvd file to write the times and plot them along-side ASPECT.
   !
-  ! Companion routine Fastscape_PVD_Collection maintains a .pvd that
-  ! indexes each .vts with its physical time, giving ParaView a proper
-  ! time series that plots directly alongside ASPECT's solution.pvd.
+  ! We only get one step per call and don't remember the others, so a
+  ! hidden .pvd file lists them all. We save each step's time to this file
+  ! and rebuild the .pvd from it. This allows the .pvd to work through restarts.
   !
   ! Adjustment and model_height are small factors used to correctly plot
   ! FastScape surface in relation to the ASPECT surface, with adjustment doing the shift
   ! to account for the ghost nodes if they are turned on.
   !
-  ! Model dim is used to switch the surface plot. In 2D ASPECT Y is depth in ASPECT and FastScape is X-Z,
-  ! in 3D ASPECT Z is depth in ASPET and FastScape is X-Y.
+  ! Model dim is used to switch the surface plot. In 2D ASPECT simulations,
+  ! depth is called Y in ASPECT and FastScape dimensions are called X and Z,
+  ! in 3D ASPECT Z is depth in ASPECT and FastScape is X-Y.
 
   use FastScapeContext
   use, intrinsic :: iso_c_binding
@@ -22,12 +24,16 @@ subroutine Fastscape_Named_VTK (vex, istep, foldername, k, model_height, model_d
   integer, intent(in) :: k, istep, model_dim
   double precision, intent(in) :: vex, model_height, adjustment, time
   character(len=k), intent(in) :: foldername
+  logical(c_bool), intent(in) :: output_basement, output_sealevel
+
   character(len=7) :: cstep
   integer :: i, j
-  double precision :: dx, dy 
+  double precision :: dx, dy
   character(len=1024) :: fname
   character(len=64)   :: extent
-  logical(c_bool), intent(in) :: output_basement, output_sealevel
+
+  ! Points and per-node scratch buffer (single precision, VTK ordering)
+  real(c_float), allocatable :: pts(:), buf(:)
 
   dx = xl/(nx - 1)
   dy = yl/(ny - 1)
@@ -38,170 +44,272 @@ subroutine Fastscape_Named_VTK (vex, istep, foldername, k, model_height, model_d
   ! StructuredGrid extent: 0-based index range in i, j, k
   write(extent,'(I0,1x,I0,1x,I0,1x,I0,1x,I0,1x,I0)') 0, nx-1, 0, ny-1, 0, 0
 
+  allocate(pts(3*nn), buf(nn))
+
+  ! =========================== Topography ===========================
+  ! Build the point coordinates (i fastest, then j) into pts(:).
+  call build_points(h, pts)
+
   fname = trim(foldername)//'/Topography'//cstep//'.vts'
-  open(unit=77, file=trim(fname), status='unknown', form='formatted')
+  call open_vts(77, fname, extent)
 
-  write(77,'(A)') '<?xml version="1.0"?>'
-  write(77,'(A)') '<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">'
-  write(77,'(A)') '  <StructuredGrid WholeExtent="'//trim(extent)//'">'
-  write(77,'(A)') '    <Piece Extent="'//trim(extent)//'">'
+  ! Offsets are assigned in write order; open_piece_points writes the
+  ! Points DataArray header with offset 0, then each scalar advances the
+  ! running offset by 4 (length header) + 4*nn (data).
+  call write_header_points(77, extent)
 
-  ! ---- Points (x, y, z = elevation * vertical exaggeration) ----
-  ! Order must be i fastest, then j, then k (VTK structured ordering).
-  write(77,'(A)') '      <Points>'
-  write(77,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="ascii">'
-  do j = 1, ny
-     do i = 1, nx
-      if (model_dim == 2) then
-         ! 2D ASPECT: elevation in Y, adjust for ghost nodes and extent in 2D.
-         write(77,'(3(1x,ES14.6))') &
-              sngl(dx*(i-1)-adjustment), &
-              sngl((h(i+(j-1)*nx))*abs(vex)+model_height), &
-              sngl(dy*(j-1)-yl-adjustment)
-      else
-         ! 3D ASPECT: X, Y as-is, elevation in Z
-         write(77,'(3(1x,ES14.6))') &
-              sngl(dx*(i-1)-adjustment), &
-              sngl(dy*(j-1)-adjustment), &
-              sngl((h(i+(j-1)*nx))*abs(vex)+model_height)
-      end if
-     end do
-  end do
-  write(77,'(A)') '        </DataArray>'
-  write(77,'(A)') '      </Points>'
+  ! Here are the different fields we will write into the 
+  ! Topography.vts files.
+  call put_line(77, '      <PointData Scalars="topography">')
+  call decl_scalar(77, 'topography',          off_after(0))
+  call decl_scalar(77, 'basement',            off_after(1))
+  call decl_scalar(77, 'erosion_rate',        off_after(2))
+  call decl_scalar(77, 'total_erosion',       off_after(3))
+  call decl_scalar(77, 'drainage_area',       off_after(4))
+  call decl_scalar(77, 'catchment',           off_after(5))
+  call decl_scalar(77, 'precipitation',       off_after(6))
+  call decl_scalar(77, 'uplift',              off_after(7))
+  call decl_scalar(77, 'velocity_0',          off_after(8))
+  call decl_scalar(77, 'velocity_1',          off_after(9))
+  call decl_scalar(77, 'diffusivity',         off_after(10))
+  call decl_scalar(77, 'river_incision_rate', off_after(11))
+  call put_line(77, '      </PointData>')
+  call close_piece(77)
 
-  ! ---- Point data (all your original fields, same node ordering) ----
-  write(77,'(A)') '      <PointData Scalars="topography">'
-  call write_scalar(77, 'topography',    h,      nn)
-  call write_scalar(77, 'basement',      b,      nn)
-  call write_scalar(77, 'erosion_rate',  erate,  nn)
-  call write_scalar(77, 'total_erosion', etot,   nn)
-  call write_scalar(77, 'drainage_area', a,      nn)
-  call write_scalar(77, 'catchment',     catch,  nn)
-  call write_scalar(77, 'precipitation', precip, nn)
-
-  ! Should these be renamed based on orientation, should z always read uplift?
-  call write_scalar(77, 'uplift',          u,   nn)
-  call write_scalar(77, 'velocity_0',          vx,  nn)
-  call write_scalar(77, 'velocity_1',          vy,  nn)
-  call write_scalar(77, 'diffusivity',         kd,  nn)
-  call write_scalar(77, 'river_incision_rate', kf,  nn)
-  write(77,'(A)') '      </PointData>'
-
-  write(77,'(A)') '    </Piece>'
-  write(77,'(A)') '  </StructuredGrid>'
-  write(77,'(A)') '</VTKFile>'
+  ! ---- Appended raw binary block ----
+  call open_appended(77)
+  call append_real(77, pts)          ! points (3*nn)
+  call append_real_from(77, h,      buf)
+  call append_real_from(77, b,      buf)
+  call append_real_from(77, erate,  buf)
+  call append_real_from(77, etot,   buf)
+  call append_real_from(77, a,      buf)
+  call append_real_from(77, catch,  buf)
+  call append_real_from(77, precip, buf)
+  call append_real_from(77, u,      buf)
+  call append_real_from(77, vx,     buf)
+  call append_real_from(77, vy,     buf)
+  call append_real_from(77, kd,     buf)
+  call append_real_from(77, kf,     buf)
+  call close_appended(77)
   close(77)
 
-  ! ---- Optionally output the basement ----
+  ! ============================ Basement ============================
   if (output_basement) then
+     call build_points(b, pts)
 
      fname = trim(foldername)//'/Basement'//cstep//'.vts'
-     open(unit=77, file=trim(fname), status='unknown', form='formatted')
-     write(77,'(A)') '<?xml version="1.0"?>'
-     write(77,'(A)') '<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">'
-     write(77,'(A)') '  <StructuredGrid WholeExtent="'//trim(extent)//'">'
-     write(77,'(A)') '    <Piece Extent="'//trim(extent)//'">'
-     write(77,'(A)') '      <Points>'
-     write(77,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="ascii">'
-     do j = 1, ny
-        do i = 1, nx
-          if (model_dim == 2) then
-            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), &
-                  sngl(b(i+(j-1)*nx)*abs(vex)+model_height), &
-                  sngl(dy*(j-1)-yl-adjustment)
-          else
-            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), sngl(dy*(j-1)-adjustment), &
-                  sngl(b(i+(j-1)*nx)*abs(vex)+model_height)
-          endif
-        end do
-     end do
-     write(77,'(A)') '        </DataArray>'
-     write(77,'(A)') '      </Points>'
-     write(77,'(A)') '      <PointData Scalars="B">'
-     call write_scalar(77, 'basement',     b, nn)
-     call write_scalar(77, 'basement_difference', h-b, nn)
-     write(77,'(A)') '      </PointData>'
-     write(77,'(A)') '    </Piece>'
-     write(77,'(A)') '  </StructuredGrid>'
-     write(77,'(A)') '</VTKFile>'
-     close(77)
+     call open_vts(77, fname, extent)
+     call write_header_points(77, extent)
+     call put_line(77, '      <PointData Scalars="basement">')
+     call decl_scalar(77, 'basement',            off_after(0))
+     call decl_scalar(77, 'basement_difference', off_after(1))
+     call put_line(77, '      </PointData>')
+     call close_piece(77)
 
-   end if 
-
-   ! ---- Optionally output the sealevel ----
-   if (output_sealevel) then
-
-     fname = trim(foldername)//'/SeaLevel'//cstep//'.vts'
-     open(unit=77, file=trim(fname), status='unknown', form='formatted')
-     write(77,'(A)') '<?xml version="1.0"?>'
-     write(77,'(A)') '<VTKFile type="StructuredGrid" version="0.1" byte_order="LittleEndian">'
-     write(77,'(A)') '  <StructuredGrid WholeExtent="'//trim(extent)//'">'
-     write(77,'(A)') '    <Piece Extent="'//trim(extent)//'">'
-     write(77,'(A)') '      <Points>'
-     write(77,'(A)') '        <DataArray type="Float32" NumberOfComponents="3" format="ascii">'
-     do j = 1, ny
-        do i = 1, nx
-          if (model_dim == 2) then
-            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), sngl(sealevel*abs(vex)+model_height), &
-                  sngl(dy*(j-1)-yl-adjustment)
-          else
-            write(77,'(3(1x,ES14.6))') sngl(dx*(i-1)-adjustment), sngl(dy*(j-1)-adjustment), &
-                  sngl(sealevel*abs(vex)+model_height)
-          endif
-        end do
-     end do
-     write(77,'(A)') '        </DataArray>'
-     write(77,'(A)') '      </Points>'
-     write(77,'(A)') '      <PointData Scalars="SL">'
-     write(77,'(A)') '        <DataArray type="Float32" Name="SL" format="ascii">'
+     call open_appended(77)
+     call append_real(77, pts)               ! points
+     call append_real_from(77, b, buf)       ! basement (buf as scratch)
      do i = 1, nn
-        write(77,'(1x,ES14.6)') sngl(sealevel)
+        buf(i) = real(h(i) - b(i), c_float)   ! basement_difference into buf
      end do
-     write(77,'(A)') '        </DataArray>'
-     write(77,'(A)') '      </PointData>'
-     write(77,'(A)') '    </Piece>'
-     write(77,'(A)') '  </StructuredGrid>'
-     write(77,'(A)') '</VTKFile>'
+     call append_real(77, buf)               ! basement_difference
+     call close_appended(77)
      close(77)
-
   end if
 
-  call Fastscape_PVD_Collection (cstep, time, foldername, k, vex)
+  ! ============================ SeaLevel ============================
+  if (output_sealevel) then
+     ! Flat plane: elevation is the constant sealevel at every node.
+     call build_points_const(real(sealevel*abs(vex)+model_height, c_float), pts)
+     do i = 1, nn
+        buf(i) = real(sealevel, c_float)
+     end do
 
+     fname = trim(foldername)//'/SeaLevel'//cstep//'.vts'
+     call open_vts(77, fname, extent)
+     call write_header_points(77, extent)
+     call put_line(77, '      <PointData Scalars="SL">')
+     call decl_scalar(77, 'SL', off_after(0))
+     call put_line(77, '      </PointData>')
+     call close_piece(77)
+
+     call open_appended(77)
+     call append_real(77, pts)
+     call append_real(77, buf)
+     call close_appended(77)
+     close(77)
+  end if
+
+  ! This will call the function to write the PVD files.
+  call Fastscape_PVD_Collection (cstep, time, foldername, k, output_basement, output_sealevel)
+
+  deallocate(pts, buf)
   return
 
 contains
 
-  subroutine write_scalar(unit, name, arr, n)
-    integer, intent(in) :: unit, n
-    character(len=*), intent(in) :: name
-    double precision, intent(in), dimension(*) :: arr
-    integer :: ii
-    write(unit,'(A)') '        <DataArray type="Float32" Name="'//trim(name)// &
-         '" format="ascii">'
-    do ii = 1, n
-       write(unit,'(1x,ES14.6)') sngl(arr(ii))
+  ! ----- byte offset of the array that comes AFTER `m` scalars have
+  !       already been declared (points array is index -1 at offset 0) -----
+  integer function off_after(m) result(o)
+    integer, intent(in) :: m
+    ! points block: 8 (len) + 4*3*nn (data); then m scalar blocks each
+    ! 8 + 4*nn.  (8-byte UInt64 length prefix.)
+    o = (8 + 4*3*nn) + m*(8 + 4*nn)
+  end function off_after
+
+  subroutine build_points(elev, p)
+    double precision, intent(in), dimension(*) :: elev
+    real(c_float), intent(out) :: p(:)
+    integer :: ii, jj, idx
+    idx = 0
+    do jj = 1, ny
+       do ii = 1, nx
+          if (model_dim == 2) then
+             p(idx+1) = real(dx*(ii-1)-adjustment, c_float)
+             p(idx+2) = real(elev(ii+(jj-1)*nx)*abs(vex)+model_height, c_float)
+             p(idx+3) = real(dy*(jj-1)-yl-adjustment, c_float)
+          else
+             p(idx+1) = real(dx*(ii-1)-adjustment, c_float)
+             p(idx+2) = real(dy*(jj-1)-adjustment, c_float)
+             p(idx+3) = real(elev(ii+(jj-1)*nx)*abs(vex)+model_height, c_float)
+          end if
+          idx = idx + 3
+       end do
     end do
-    write(unit,'(A)') '        </DataArray>'
-  end subroutine write_scalar
+  end subroutine build_points
+
+  subroutine build_points_const(zconst, p)
+    real(c_float), intent(in) :: zconst
+    real(c_float), intent(out) :: p(:)
+    integer :: ii, jj, idx
+    idx = 0
+    do jj = 1, ny
+       do ii = 1, nx
+          if (model_dim == 2) then
+             p(idx+1) = real(dx*(ii-1)-adjustment, c_float)
+             p(idx+2) = zconst
+             p(idx+3) = real(dy*(jj-1)-yl-adjustment, c_float)
+          else
+             p(idx+1) = real(dx*(ii-1)-adjustment, c_float)
+             p(idx+2) = real(dy*(jj-1)-adjustment, c_float)
+             p(idx+3) = zconst
+          end if
+          idx = idx + 3
+       end do
+    end do
+  end subroutine build_points_const
+
+  ! ---- XML header helpers (all written as formatted text) ----
+
+  subroutine open_vts(unit, path, ext)
+    integer, intent(in) :: unit
+    character(len=*), intent(in) :: path, ext
+    ! stream access so we can mix the text header with the raw binary
+    ! appended block in one file.
+    open(unit=unit, file=trim(path), status='unknown', form='unformatted', &
+         access='stream', convert='big_endian')
+    call put_line(unit, '<?xml version="1.0"?>')
+    call put_line(unit, '<VTKFile type="StructuredGrid" version="0.1" '// &
+                        'byte_order="BigEndian" header_type="UInt64">')
+    call put_line(unit, '  <StructuredGrid WholeExtent="'//trim(ext)//'">')
+    call put_line(unit, '    <Piece Extent="'//trim(ext)//'">')
+  end subroutine open_vts
+
+  subroutine write_header_points(unit, ext)
+    integer, intent(in) :: unit
+    character(len=*), intent(in) :: ext
+    call put_line(unit, '      <Points>')
+    call put_line(unit, '        <DataArray type="Float32" '// &
+                        'NumberOfComponents="3" format="appended" offset="0"/>')
+    call put_line(unit, '      </Points>')
+  end subroutine write_header_points
+
+  subroutine decl_scalar(unit, name, offset)
+    integer, intent(in) :: unit, offset
+    character(len=*), intent(in) :: name
+    character(len=32) :: offc
+    write(offc,'(I0)') offset
+    call put_line(unit, '        <DataArray type="Float32" Name="'//trim(name)// &
+                        '" format="appended" offset="'//trim(adjustl(offc))//'"/>')
+  end subroutine decl_scalar
+
+  subroutine close_piece(unit)
+    integer, intent(in) :: unit
+    call put_line(unit, '    </Piece>')
+    call put_line(unit, '  </StructuredGrid>')
+  end subroutine close_piece
+
+  subroutine open_appended(unit)
+    integer, intent(in) :: unit
+    ! The underscore marks the start of the raw data; VTK offsets are
+    ! measured from the byte immediately after it.
+    call put_line(unit, '  <AppendedData encoding="raw">')
+    call put_str (unit, '_')
+  end subroutine open_appended
+
+  subroutine close_appended(unit)
+    integer, intent(in) :: unit
+    call put_line(unit, '  </AppendedData>')
+    call put_line(unit, '</VTKFile>')
+  end subroutine close_appended
+
+  ! ---- raw byte writers (stream unformatted) ----
+
+  subroutine put_line(unit, s)
+    integer, intent(in) :: unit
+    character(len=*), intent(in) :: s
+    write(unit) s//char(10)
+  end subroutine put_line
+
+  subroutine put_str(unit, s)
+    integer, intent(in) :: unit
+    character(len=*), intent(in) :: s
+    write(unit) s
+  end subroutine put_str
+
+  ! append a real(c_float) array: 4-byte length header then the raw data
+  subroutine append_real(unit, arr)
+    integer, intent(in) :: unit
+    real(c_float), intent(in) :: arr(:)
+    integer(c_int64_t) :: nbytes
+    nbytes = int(size(arr)*4, c_int64_t)
+    write(unit) nbytes
+    write(unit) arr
+  end subroutine append_real
+
+  ! append a double-precision node field, converting to single first
+  subroutine append_real_from(unit, arr, scratch)
+    integer, intent(in) :: unit
+    double precision, intent(in), dimension(*) :: arr
+    real(c_float), intent(inout) :: scratch(:)
+    integer :: ii
+    integer(c_int64_t) :: nbytes
+    do ii = 1, nn
+       scratch(ii) = real(arr(ii), c_float)
+    end do
+    nbytes = int(nn*4, c_int64_t)
+    write(unit) nbytes
+    write(unit) scratch(1:nn)
+  end subroutine append_real_from
 
 !--------------------------------------------------------------------
 
-  subroutine Fastscape_PVD_Collection (cstep, time, foldername, k, vex)
+  subroutine Fastscape_PVD_Collection (cstep, time, foldername, k, output_basement, output_sealevel)
 
-    ! Rewrites the sidecar index with this step appended, dropping any
+    ! Rewrites the hidden file with this step appended, dropping any
     ! existing entries at or after the current time so that a replayed
     ! step (e.g. after a checkpoint restart) replaces its old record
-    ! instead of duplicating it. Then regenerates each .pvd from the
-    ! index. Holds no state between calls: the index file on disk is
-    ! the only record, so restarts pick up where they left off.
+    ! instead of duplicating it. Then recreates each .pvd from the
+    ! index.
 
+    use, intrinsic :: iso_c_binding
     implicit none
     integer, intent(in) :: k
     character(len=7), intent(in) :: cstep
-    double precision, intent(in) :: time, vex
+    double precision, intent(in) :: time
     character(len=k), intent(in) :: foldername
+    logical(c_bool), intent(in) :: output_basement, output_sealevel
 
     character(len=7), allocatable :: cs(:)
     double precision, allocatable :: t(:)
@@ -218,7 +326,7 @@ contains
        open(unit=79, file=trim(foldername)//'/.pvd_index', status='old', &
             form='formatted', action='read')
        do
-          read(79,'(A7,1x,ES16.8)',iostat=ios) cs1, t1
+          read(79,*,iostat=ios) cs1, t1
           if (ios /= 0) exit
           if (t1 .lt. time - 1.d-10*max(1.d0,abs(time))) then
              n = n + 1
@@ -237,18 +345,19 @@ contains
     open(unit=79, file=trim(foldername)//'/.pvd_index', status='replace', &
          form='formatted')
     do r = 1, n
-       write(79,'(A7,1x,ES16.8)') cs(r), t(r)
+       ! We write at G0.15 to match ASPECT significant figures in solution.pvd
+       write(79,'(A7,1x,G0.15)') cs(r), t(r)
     end do
     close(79)
 
     deallocate(cs, t)
 
+    ! Always write the topography pvd.
     call write_pvd (foldername, k, 'Topography')
 
-    if (vex.lt.0.d0) then
-       call write_pvd (foldername, k, 'SeaLevel')
-       call write_pvd (foldername, k, 'Basement')
-    end if
+    ! Only write sea level and basement pvd if they are requested.
+    if (output_sealevel) call write_pvd (foldername, k, 'SeaLevel')
+    if (output_basement) call write_pvd (foldername, k, 'Basement')
 
     return
   end subroutine Fastscape_PVD_Collection
@@ -257,7 +366,7 @@ contains
 
   subroutine write_pvd (foldername, k, base)
 
-    ! Rewrites <base>.pvd in full from the sidecar index, so the
+    ! Rewrites <base>.pvd in full from the hidden file index, so the
     ! collection is always valid even if the run stops early.
 
     implicit none
@@ -276,12 +385,12 @@ contains
     fname = trim(foldername)//'/'//trim(base)//'.pvd'
     open(unit=78, file=trim(fname), status='unknown', form='formatted')
     write(78,'(A)') '<?xml version="1.0"?>'
-    write(78,'(A)') '<VTKFile type="Collection" version="0.1" byte_order="LittleEndian">'
+    write(78,'(A)') '<VTKFile type="Collection" version="0.1" byte_order="BigEndian">'
     write(78,'(A)') '  <Collection>'
     do
-       read(79,'(A7,1x,ES16.8)',iostat=ios) cs, t
+       read(79,*,iostat=ios) cs, t
        if (ios /= 0) exit
-       write(78,'(A,ES16.8,A)') '    <DataSet timestep="', t, &
+       write(78,'(A,G0.12,A)') '    <DataSet timestep="', t, &
             '" group="" part="0" file="'//trim(base)//cs//'.vts"/>'
     end do
     write(78,'(A)') '  </Collection>'
