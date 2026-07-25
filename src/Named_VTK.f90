@@ -1,4 +1,5 @@
-subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, model_dim, adjustment, time)
+subroutine Fastscape_Named_VTK (vex, istep, foldername, k, model_height, model_dim, adjustment, &
+                                time, output_basement, output_sealevel)
 
   ! Writes an XML StructuredGrid (.vts) file per timestep into
   ! <foldername>/.
@@ -8,26 +9,25 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   ! time series that plots directly alongside ASPECT's solution.pvd.
   !
   ! Adjustment and model_height are small factors used to correctly plot
-  ! FastScape surface in relation to the ASPECT surface. An additional 100 m is added
-  ! to model_height in this script so it is clearly visible above ASPECT.
+  ! FastScape surface in relation to the ASPECT surface, with adjustment doing the shift
+  ! to account for the ghost nodes if they are turned on.
   !
   ! Model dim is used to switch the surface plot. In 2D ASPECT Y is depth in ASPECT and FastScape is X-Z,
   ! in 3D ASPECT Z is depth in ASPET and FastScape is X-Y.
 
   use FastScapeContext
+  use, intrinsic :: iso_c_binding
   implicit none
 
   integer, intent(in) :: k, istep, model_dim
   double precision, intent(in) :: vex, model_height, adjustment, time
-  double precision, intent(in), dimension(*) :: f
   character(len=k), intent(in) :: foldername
-
   character(len=7) :: cstep
   integer :: i, j
   double precision :: dx, dy 
   character(len=1024) :: fname
   character(len=64)   :: extent
-  allocate(channel(nn))
+  logical(c_bool), intent(in) :: output_basement, output_sealevel
 
   dx = xl/(nx - 1)
   dy = yl/(ny - 1)
@@ -56,7 +56,7 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
          ! 2D ASPECT: elevation in Y, adjust for ghost nodes and extent in 2D.
          write(77,'(3(1x,ES14.6))') &
               sngl(dx*(i-1)-adjustment), &
-              sngl((h(i+(j-1)*nx)+model_height)*abs(vex)), &
+              sngl((h(i+(j-1)*nx))*abs(vex)+model_height), &
               sngl(dy*(j-1)-yl-adjustment)
       else
          ! 3D ASPECT: X, Y as-is, elevation in Z
@@ -73,7 +73,6 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   ! ---- Point data (all your original fields, same node ordering) ----
   write(77,'(A)') '      <PointData Scalars="topography">'
   call write_scalar(77, 'topography',    h,      nn)
-  call write_scalar(77, 'HHHHH',         f,      nn)
   call write_scalar(77, 'basement',      b,      nn)
   call write_scalar(77, 'erosion_rate',  erate,  nn)
   call write_scalar(77, 'total_erosion', etot,   nn)
@@ -82,9 +81,9 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   call write_scalar(77, 'precipitation', precip, nn)
 
   ! Should these be renamed based on orientation, should z always read uplift?
-  call write_scalar(77, 'velocity_z',          u,   nn)
-  call write_scalar(77, 'velocity_x',          vx,  nn)
-  call write_scalar(77, 'velocity_y',          vy,  nn)
+  call write_scalar(77, 'uplift',          u,   nn)
+  call write_scalar(77, 'velocity_0',          vx,  nn)
+  call write_scalar(77, 'velocity_1',          vy,  nn)
   call write_scalar(77, 'diffusivity',         kd,  nn)
   call write_scalar(77, 'river_incision_rate', kf,  nn)
   write(77,'(A)') '      </PointData>'
@@ -94,8 +93,8 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   write(77,'(A)') '</VTKFile>'
   close(77)
 
-  ! ---- Optional basement / sea-level files, mirroring the original ----
-  if (vex.lt.0.d0) then
+  ! ---- Optionally output the basement ----
+  if (output_basement) then
 
      fname = trim(foldername)//'/Basement'//cstep//'.vts'
      open(unit=77, file=trim(fname), status='unknown', form='formatted')
@@ -120,13 +119,18 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
      write(77,'(A)') '        </DataArray>'
      write(77,'(A)') '      </Points>'
      write(77,'(A)') '      <PointData Scalars="B">'
-     call write_scalar(77, 'B',     b, nn)
-     call write_scalar(77, 'HHHHH', f, nn)
+     call write_scalar(77, 'basement',     b, nn)
+     call write_scalar(77, 'basement_difference', h-b, nn)
      write(77,'(A)') '      </PointData>'
      write(77,'(A)') '    </Piece>'
      write(77,'(A)') '  </StructuredGrid>'
      write(77,'(A)') '</VTKFile>'
      close(77)
+
+   end if 
+
+   ! ---- Optionally output the sealevel ----
+   if (output_sealevel) then
 
      fname = trim(foldername)//'/SeaLevel'//cstep//'.vts'
      open(unit=77, file=trim(fname), status='unknown', form='formatted')
@@ -164,8 +168,6 @@ subroutine Fastscape_Named_VTK (f, vex, istep, foldername, k, model_height, mode
   end if
 
   call Fastscape_PVD_Collection (cstep, time, foldername, k, vex)
-
-  deallocate(channel)
 
   return
 
