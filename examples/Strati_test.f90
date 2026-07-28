@@ -16,8 +16,8 @@ program Strati_test
   implicit none
 
   integer :: nx, ny, istep, nstep, nfreq, i, j, nreflector
-  double precision :: xl, yl, dt, kfsed, m, n, kdsed, g, sealevel, poro, zporo, ratio, L, kds, vex, pi
-  double precision, dimension(:), allocatable :: h, u, x, y, kf, kd
+  double precision :: xl, yl, dt, kfsed, m, n, kdsed, g, sealevel, poro, zporo, ratio, L, vex, pi
+  double precision, dimension(:), allocatable :: h, u, x, y, kf, kd, kds1, kds2
 
   pi=atan(1.d0)*4.d0
 
@@ -47,7 +47,7 @@ program Strati_test
   call FastScape_Set_DT (dt)
 
   ! set random initial topography
-  allocate (h(nx*ny),kf(nx*ny),kd(nx*ny))
+  allocate (h(nx*ny),kf(nx*ny),kd(nx*ny),kds1(nx*ny), kds2(nx*ny))
   call random_number (h)
   where (y<2.d0*yl/3.d0) h = h - 1000.d0*(2.d0*yl/3.d0-y)/(2.d0*yl/3.d0)
   h=h+10.*cos(x/xl*2.d0*pi)
@@ -69,9 +69,10 @@ program Strati_test
   zporo = 1.d3
   ratio = 0.5d0
   L = 1.d2
-  kds = 5.d2
+  kds1 = 5.d2
+  kds2 = 2.5d2
   call FastScape_Set_Marine_Parameters &
-       (sealevel, poro, poro, zporo, zporo, ratio, L, kds, kds/2.d0)
+       (sealevel, poro, poro, zporo, zporo, ratio, L, kds1, kds2)
 
   ! set uplift rate
   allocate (u(nx*ny))
