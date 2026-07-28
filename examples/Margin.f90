@@ -16,8 +16,8 @@ program Margin
   implicit none
 
   integer :: nx, ny, istep, nstep, nfreq, i, j
-  double precision :: xl, yl, dt, kfsed, m, n, kdsed, g, sealevel, poro, zporo, ratio, L, kds
-  double precision, dimension(:), allocatable :: h, u, x, y, kf, kd, fd
+  double precision :: xl, yl, dt, kfsed, m, n, kdsed, g, sealevel, poro, zporo, ratio, L
+  double precision, dimension(:), allocatable :: h, u, x, y, kf, kd, fd, kds1, kds2
 
   ! initialize FastScape
   call FastScape_Init ()
@@ -45,7 +45,7 @@ program Margin
   call FastScape_Set_DT (dt)
 
   ! set random initial topography
-  allocate (h(nx*ny),kf(nx*ny),kd(nx*ny))
+  allocate (h(nx*ny),kf(nx*ny),kd(nx*ny),kds1(nx*ny), kds2(nx*ny))
   call random_number (h)
   where (y<yl/2.d0) h = h - 1000.d0
   call FastScape_Init_H (h)
@@ -66,9 +66,10 @@ program Margin
   zporo = 1.d3
   ratio = 0.5d0
   L = 1.d2
-  kds = 3.d2
+  kds1 = 3.d2
+  kds2 = 1.5d2
   call FastScape_Set_Marine_Parameters &
-       (sealevel, poro, poro, zporo, zporo, ratio, L, kds, kds/2.d0)
+       (sealevel, poro, poro, zporo, zporo, ratio, L, kds1, kds2)
 
   ! set uplift rate
   allocate (u(nx*ny))
