@@ -233,6 +233,8 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
         ij=(j-1)*nx+i
         ijp=(j)*nx+i
         ijm=(j-2)*nx+i
+        ipj=(j-1)*nx+i+1
+        imj=(j-1)*nx+i-1
         ! calculate y-direction coefficients (always valid because j=2,ny-1)
         kdsea_ijp=(kdsea2(ijp)+(kdsea1(ijp)-kdsea2(ijp))*ft(ijp) &
                   +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*ft(ij) &
@@ -240,23 +242,15 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
         kdsea_ijm=(kdsea2(ijm)+(kdsea1(ijm)-kdsea2(ijm))*ft(ijm) &
                   +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*ft(ij) &
                   )/2.d0
+        kdsea_ipj = 0.d0
+        kdsea_imj = 0.d0
         ! calculate x-direction coefficients only when neighbour exists
-        if (i.eq.1) then
-          ipj=ij+1
+        if (i < nx) then
           kdsea_ipj=(kdsea2(ipj)+(kdsea1(ipj)-kdsea2(ipj))*fhalfp(ipj) &
                     +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
                     )/2.d0
-        elseif (i.eq.nx) then
-          imj=ij-1
-          kdsea_imj=(kdsea2(imj)+(kdsea1(imj)-kdsea2(imj))*fhalfp(imj) &
-                    +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
-                    )/2.d0
-        else
-          ipj=ij+1
-          imj=ij-1
-          kdsea_ipj=(kdsea2(ipj)+(kdsea1(ipj)-kdsea2(ipj))*fhalfp(ipj) &
-                    +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
-                    )/2.d0
+        endif
+        if (i > 1) then
           kdsea_imj=(kdsea2(imj)+(kdsea1(imj)-kdsea2(imj))*fhalfp(imj) &
                     +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
                     )/2.d0
@@ -388,9 +382,10 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
     do i=2,nx-1
       do j=1,ny
         ij=(j-1)*nx+i
-        ij=(j-1)*nx+i
         ipj=(j-1)*nx+i+1
         imj=(j-1)*nx+i-1
+        ijp=(j)*nx+i
+        ijm=(j-2)*nx+i
         ! x-direction neighbours always exist because i=2,nx-1
         kdsea_ipj=(kdsea2(ipj)+(kdsea1(ipj)-kdsea2(ipj))*fhalfp(ipj) &
                   +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
@@ -398,23 +393,15 @@ subroutine SiltSandCouplingDiffusion (h,f,Q1,Q2,nx,ny,dx,dy,dt, &
         kdsea_imj=(kdsea2(imj)+(kdsea1(imj)-kdsea2(imj))*fhalfp(imj) &
                   +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fhalfp(ij) &
                   )/2.d0
+        kdsea_ijp = 0.d0
+        kdsea_ijm = 0.d0
         ! calculate y-direction coefficients only when neighbours exist
-        if (j.eq.1) then
-          ijp=j*nx+i
+        if (j < ny) then
           kdsea_ijp=(kdsea2(ijp)+(kdsea1(ijp)-kdsea2(ijp))*fp(ijp) &
                     +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
                     )/2.d0
-        elseif (j.eq.ny) then
-          ijm=(j-2)*nx+i
-          kdsea_ijm=(kdsea2(ijm)+(kdsea1(ijm)-kdsea2(ijm))*fp(ijm) &
-                    +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
-                    )/2.d0
-        else
-          ijp=j*nx+i
-          ijm=(j-2)*nx+i
-          kdsea_ijp=(kdsea2(ijp)+(kdsea1(ijp)-kdsea2(ijp))*fp(ijp) &
-                    +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
-                    )/2.d0
+        endif
+        if (j > 1) then
           kdsea_ijm=(kdsea2(ijm)+(kdsea1(ijm)-kdsea2(ijm))*fp(ijm) &
                     +kdsea2(ij)+(kdsea1(ij)-kdsea2(ij))*fp(ij) &
                     )/2.d0
