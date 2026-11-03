@@ -78,7 +78,7 @@ subroutine Fastscape_Write_Visualization (vex, istep, foldername, k, model_heigh
     where (h(1:nn) < sealevel)
       ! Marine diffusivity, matching how sea diffusivity is calculated in ASPECT.
       ! where Fmix is the silt_fraction, kdsea1 is the silt diffusivity, and ksea2 is the sand diffusivity.
-      field_data(:, 11) = real(kdsea1*Fmix(1:nn) + (1.0_c_float - Fmix(1:nn))*kdsea2, c_float)  ! diffusivity
+      field_data(:, 11) = real(kdsea1(1:nn)*Fmix(1:nn) + (1.0_c_float - Fmix(1:nn))*kdsea2(1:nn), c_float)  ! diffusivity
       field_data(:, 12) = ieee_value(0.0_c_float, ieee_quiet_nan)
       field_data(:, 13) = real(Fmix(1:nn), c_float)              ! silt_fraction
     elsewhere
